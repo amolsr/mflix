@@ -196,6 +196,9 @@ export default class MoviesDAO {
     const queryPipeline = [
       matchStage,
       sortStage,
+      skipStage,
+      limitStage,
+      facetStage,
       // TODO Ticket: Faceted Search
       // Add the stages to queryPipeline in the correct order.
     ]
@@ -245,6 +248,8 @@ export default class MoviesDAO {
         .find(query)
         .project(project)
         .sort(sort)
+        .skip(page * moviesPerPage)
+        .limit(20)
     } catch (e) {
       console.error(`Unable to issue find command, ${e}`)
       return { moviesList: [], totalNumMovies: 0 }
@@ -301,6 +306,25 @@ export default class MoviesDAO {
             _id: ObjectId(id),
           },
         },
+        {
+          $lookup: {
+            from: "comments",
+            let: { id: "$_id" },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $eq: ["$movie_id", "$$id"],
+                  },
+                },
+              },
+              {
+                $sort: { date: -1 },
+              },
+            ],
+            as: "comments",
+          },
+        },
       ]
       return await movies.aggregate(pipeline).next()
     } catch (e) {
@@ -310,7 +334,13 @@ export default class MoviesDAO {
       Handle the error that occurs when an invalid ID is passed to this method.
       When this specific error is thrown, the method should return `null`.
       */
-
+      if (
+        String(e).startsWith(
+          "MongoError: '_id' starts with an invalid character",
+        )
+      ) {
+        return null
+      }
       // TODO Ticket: Error Handling
       // Catch the InvalidId error by string matching, and then handle it.
       console.error(`Something went wrong in getMovieByID: ${e}`)
